@@ -1,25 +1,19 @@
-#ifndef SHELL_H
-#define SHELL_H
+# Define the compiler
+CC = gcc
 
-#define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/wait.h>
+# Define compiler flags (-Wall shows all warnings, -O2 optimizes the binary)
+CFLAGS = -Wall -Wextra -O2
 
-#define TOK_BUFSIZE 64
-#define TOK_DELIM " \t\r\n\a"
+# Define the final executable name
+TARGET = penguinfetch
 
-// Core Pipeline Functions
-char *read_line(void);
-char **split_line(char *line);
-int execute_command(char **args);
+# The default rule when you just type 'make'
+all: $(TARGET)
 
-// Built-in Shell Commands
-int shell_cd(char **args);
-int shell_exit(char **args);
-int num_builtins(void);
+# How to build the target
+$(TARGET): penguinfetch.c
+	$(CC) $(CFLAGS) -o $(TARGET) penguinfetch.c
 
-#endif // SHELL_H
+# A rule to clean up the compiled binary so it doesn't clutter git
+clean:
+	rm -f $(TARGET)
