@@ -1,15 +1,36 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <sys/utsname.h>
+#include <sys/sysinfo.h>
+#include <pwd.h>
+#include <getopt.h>
 
-// We define our custom ASCII penguin as an array of strings.
-// This makes it much easier to print it line-by-line next to our stats.
-const char *penguin_ascii[] = {
-    "       .---.       ",
-    "      /     \\      ",
-    "     | O   O |     ",
-    "     |   >   |     ",
-    "     \\ '---' /     ",
+#define MAX_S 15
+#define BUF_S 256
+#define PAD "                   " // 19 spaces
+
+const char *art_c[] = {
+    "      \033[1;30m.---\033[0m.      ",
+    "     \033[1;30m/\033[1;37m ^ ^ \033[1;30m\\\033[0m     ",
+    "    \033[1;30m|\033[1;37m  \033[1;33m(>)\033[1;37m  \033[1;30m|\033[0m    ",
+    "    \033[1;30m|\033[1;37m \033[1;35mo   o\033[1;37m \033[1;30m|\033[0m    ",
+    "     \033[1;30m\\\033[1;37m '-'\033[1;30m /\033[0m     ",
+    "   \033[1;30m___|     |___\033[0m   ",
+    "  \033[1;30m/\033[1;37m  _       _  \033[1;30m\\\033[0m  ",
+    " \033[1;30m|\033[1;37m  | |     | |  \033[1;30m|\033[0m ",
+    " \033[1;30m\\\033[1;37m  \\_\033[1;33m|_   _|\033[1;37m_/  \033[1;30m/\033[0m ",
+    "  \033[1;30m'---. \033[1;33m'-'\033[1;30m .---'\033[0m  ",
+    "       \033[1;33m'---'\033[0m       "
+};
+
+const char *art_p[] = {
+    "      .---.      ",
+    "     / ^ ^ \\     ",
+    "    |  (>)  |    ",
+    "    | o   o |    ",
+    "     \\ '-' /     ",
     "   ___|     |___   ",
     "  /  _       _  \\  ",
     " |  | |     | |  | ",
@@ -17,56 +38,68 @@ const char *penguin_ascii[] = {
     "  '---. '-' .---'  ",
     "       '---'       "
 };
-const int penguin_height = 11;
 
-int main() {
-    // The utsname struct holds system information
-    struct utsname sys_info;
+void build_stats(char st[][BUF_S], int *n, int clr) {
+    const char *c = clr ? "\033[1;36m" : "";
+    const char *r = clr ? "\033[0m" : "";
 
-    // uname() returns 0 on success, non-zero on failure
-    if (uname(&sys_info) != 0) {
-        perror("uname error"); // Print error to standard error
-        return EXIT_FAILURE;   // Exit safely
-    }
-
-    // We'll prepare an array to hold our system stats as strings
-    // We format them using snprintf for safe memory handling
-    char stats[5][256];
-    snprintf(stats[0], sizeof(stats[0]), "\033[1;36mOS:\033[0m %s", sys_info.sysname);
-    snprintf(stats[1], sizeof(stats[1]), "\033[1;36mRelease:\033[0m %s", sys_info.release);
-    snprintf(stats[2], sizeof(stats[2]), "\033[1;36mVersion:\033[0m %s", sys_info.version);
-    snprintf(stats[3], sizeof(stats[3]), "\033[1;36mMachine:\033[0m %s", sys_info.machine);
-    snprintf(stats[4], sizeof(stats[4]), "\033[1;36mNode:\033[0m %s", sys_info.nodename);
+    struct utsname ut; uname(&ut);
+    struct sysinfo si; sysinfo(&si);
+    struct passwd *pw = getpwuid(getuid());
+    const char *usr = pw ? pw->pw_name : "user";
     
-    int stats_count = 5;
+    int hlen = strlen(usr) + 1 + strlen(ut.nodename);
+    if (hlen >= BUF_S) hlen = BUF_S - 1;
+    
+    char sep[BUF_S] = {0};
+    memset(sep, '-', hlen);
 
-    printf("\n"); // Give it some breathing room at the top
+    long up_m = si.uptime / 60;
+    unsigned long ram_u = (si.totalram - si.freeram) / 1024 / 1024;
+    unsigned long ram_t = si.totalram / 1024 / 1024;
+    long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+    char *sh = getenv("SHELL");
 
-    // The tricky part: printing the ASCII art side-by-side with the stats.
-    // We loop through whichever is taller (the penguin or the stats list).
-    int max_lines = (penguin_height > stats_count) ? penguin_height : stats_count;
+    snprintf(st[(*n)++], BUF_S, "%s%s%s@%s%s%s", c, usr, r, c, ut.nodename, r);
+    snprintf(st[(*n)++], BUF_S, "%s", sep);
+    snprintf(st[(*n)++], BUF_S, "%sOS:%s %s", c, r, ut.sysname);
+    snprintf(st[(*n)++], BUF_S, "%sKernel:%s %s", c, r, ut.release);
+    snprintf(st[(*n)++], BUF_S, "%sUptime:%s %ldh %ldm", c, r, up_m / 60, up_m % 60);
+    snprintf(st[(*n)++], BUF_S, "%sRAM:%s %lu / %lu MB", c, r, ram_u, ram_t);
+    snprintf(st[(*n)++], BUF_S, "%sCPU:%s %ld cores", c, r, cpus);
+    if (sh) snprintf(st[(*n)++], BUF_S, "%sShell:%s %s", c, r, sh);
+}
 
-    for (int i = 0; i < max_lines; i++) {
-        // Print the penguin line if it exists
-        if (i < penguin_height) {
-            printf("%s", penguin_ascii[i]);
-        } else {
-            // Print padding spaces if the penguin is out of lines but stats remain
-            printf("                   "); 
+void print_out(char st[][BUF_S], int n, int art, int clr) {
+    int max = (11 > n && art) ? 11 : n;
+    putchar('\n');
+    
+    for (int i = 0; i < max; i++) {
+        if (art) {
+            if (i < 11) printf("%s   ", clr ? art_c[i] : art_p[i]);
+            else printf("%s   ", PAD);
         }
+        if (i < n) printf("%s", st[i]);
+        putchar('\n');
+    }
+    putchar('\n');
+}
 
-        // Print some spacing between the art and the text
-        printf("   "); 
+int main(int argc, char **argv) {
+    int clr = isatty(STDOUT_FILENO);
+    int art = 1;
+    int opt;
 
-        // Print the stat line if it exists
-        if (i < stats_count) {
-            printf("%s", stats[i]);
-        }
-
-        // Move to the next line
-        printf("\n");
+    while ((opt = getopt(argc, argv, "ca")) != -1) {
+        if (opt == 'c') clr = 0; // -c: disable colors
+        if (opt == 'a') art = 0; // -a: disable ascii art
     }
 
-    printf("\n"); // Breathing room at the bottom
-    return EXIT_SUCCESS;
+    char st[MAX_S][BUF_S];
+    int n = 0;
+    
+    build_stats(st, &n, clr);
+    print_out(st, n, art, clr);
+
+    return 0;
 }
